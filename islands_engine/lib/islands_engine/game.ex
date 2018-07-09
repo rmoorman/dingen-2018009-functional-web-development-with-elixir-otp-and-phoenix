@@ -3,8 +3,13 @@ defmodule IslandsEngine.Game do
   use GenServer
 
   alias IslandsEngine.Board
+  alias IslandsEngine.Coordinate
   alias IslandsEngine.Guesses
+  alias IslandsEngine.Island
   alias IslandsEngine.Rules
+
+
+  @players [:player1, :player2]
 
 
 
@@ -17,6 +22,9 @@ defmodule IslandsEngine.Game do
 
   def add_player(game, name) when is_binary(name), do:
     GenServer.call(game, {:add_player, name})
+
+  def position_island(game, player, key, row, col) when player in @players, do:
+    GenServer.call(game, {:position_island, player, key, row, col})
 
 
 
@@ -56,6 +64,30 @@ defmodule IslandsEngine.Game do
   end
 
 
+  def handle_call({:position_island, player, key, row, col}, _from, state) do
+    board = player_board(state, player)
+    with {:ok, rules} <- Rules.check(state.rules, {:position_islands, player}),
+         {:ok, coordinate} <- Coordinate.new(row, col),
+         {:ok, island} <- Island.new(key, coordinate),
+         %{} = board <- Board.position_island(board, key, island)
+    do
+      state
+      |> update_board(player, board)
+      |> update_rules(rules)
+      |> reply_success(:ok)
+    else
+      :error ->
+        {:reply, :error, state}
+
+      {:error, :invalid_coordinate} ->
+        {:reply, {:error, :invalid_coordinate}, state}
+
+      {:error, :invalid_island_type} ->
+        {:reply, {:error, :invalid_island_type}, state}
+    end
+  end
+
+
 
   ###
   ### Further implementation
@@ -71,5 +103,13 @@ defmodule IslandsEngine.Game do
 
   defp reply_success(state, reply), do:
     {:reply, reply, state}
+
+
+  defp player_board(state, player), do:
+    Map.get(state, player).board
+
+
+  defp update_board(state, player, board), do:
+    Map.update!(state, player, fn player -> %{player | board: board} end)
 
 end
