@@ -26,6 +26,9 @@ defmodule IslandsEngine.Game do
   def position_island(game, player, key, row, col) when player in @players, do:
     GenServer.call(game, {:position_island, player, key, row, col})
 
+  def set_islands(game, player) when player in @players, do:
+    GenServer.call(game, {:set_islands, player})
+
 
 
   ###
@@ -63,7 +66,6 @@ defmodule IslandsEngine.Game do
     end
   end
 
-
   def handle_call({:position_island, player, key, row, col}, _from, state) do
     board = player_board(state, player)
     with {:ok, rules} <- Rules.check(state.rules, {:position_islands, player}),
@@ -84,6 +86,20 @@ defmodule IslandsEngine.Game do
 
       {:error, :invalid_island_type} ->
         {:reply, {:error, :invalid_island_type}, state}
+    end
+  end
+
+  def handle_call({:set_islands, player}, _from, state) do
+    board = player_board(state, player)
+    with {:rules, {:ok, rules}} <- {:rules, Rules.check(state.rules, {:set_islands, player})},
+         {:board, true} <- {:board, Board.all_islands_positioned?(board)}
+    do
+      state
+      |> update_rules(rules)
+      |> reply_success({:ok, board})
+    else
+      {:rules, :error} -> {:reply, :error, state}
+      {:board, false} -> {:reply, {:error, :not_all_islands_positioned}, state}
     end
   end
 
