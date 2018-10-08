@@ -13,6 +13,7 @@ defmodule IslandsEngine.Game do
 
 
   @players [:player1, :player2]
+  @timeout 1000 * 60 * 60 * 24
 
 
 
@@ -58,7 +59,7 @@ defmodule IslandsEngine.Game do
       rules: Rules.new(),
     }
 
-    {:ok, initial_state}
+    {:ok, initial_state, @timeout}
   end
 
 
@@ -68,9 +69,9 @@ defmodule IslandsEngine.Game do
       state
       |> update_player2_name(name)
       |> update_rules(rules)
-      |> reply_success(:ok)
+      |> reply(:ok)
     else
-      :error -> {:reply, :error, state}
+      :error -> reply(state, :error)
     end
   end
 
@@ -84,16 +85,16 @@ defmodule IslandsEngine.Game do
       state
       |> update_board(player, board)
       |> update_rules(rules)
-      |> reply_success(:ok)
+      |> reply(:ok)
     else
       :error ->
-        {:reply, :error, state}
+        reply(state, :error)
 
       {:error, :invalid_coordinate} ->
-        {:reply, {:error, :invalid_coordinate}, state}
+        reply(state, {:error, :invalid_coordinate})
 
       {:error, :invalid_island_type} ->
-        {:reply, {:error, :invalid_island_type}, state}
+        reply(state, {:error, :invalid_island_type})
     end
   end
 
@@ -104,10 +105,10 @@ defmodule IslandsEngine.Game do
     do
       state
       |> update_rules(rules)
-      |> reply_success({:ok, board})
+      |> reply({:ok, board})
     else
-      {:rules, :error} -> {:reply, :error, state}
-      {:board, false} -> {:reply, {:error, :not_all_islands_positioned}, state}
+      {:rules, :error} -> reply(state, :error)
+      {:board, false} -> reply(state, {:error, :not_all_islands_positioned})
     end
   end
 
@@ -127,12 +128,15 @@ defmodule IslandsEngine.Game do
       |> update_board(opponent_key, opponent_board)
       |> update_guesses(player_key, hit_or_miss, coordinate)
       |> update_rules(rules)
-      |> reply_success({hit_or_miss, forested_island, win_status})
+      |> reply({hit_or_miss, forested_island, win_status})
     else
-      :error -> {:reply, :error, state}
-      {:error, :invalid_coordinate} -> {:reply, {:error, :invalid_coordinate}, state}
+      :error -> reply(state, :error)
+      {:error, :invalid_coordinate} -> reply(state, {:error, :invalid_coordinate})
     end
   end
+
+  def handle_info(:timeout, state), do:
+    {:stop, {:shutdown, :timeout}, state}
 
 
 
@@ -148,8 +152,8 @@ defmodule IslandsEngine.Game do
     %{state | rules: rules}
 
 
-  defp reply_success(state, reply), do:
-    {:reply, reply, state}
+  defp reply(state, reply), do:
+    {:reply, reply, state, @timeout}
 
 
   defp player_board(state, player), do:
