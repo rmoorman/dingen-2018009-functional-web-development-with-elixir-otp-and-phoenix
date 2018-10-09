@@ -10,6 +10,7 @@ defmodule IslandsEngine.Game do
   alias IslandsEngine.Guesses
   alias IslandsEngine.Island
   alias IslandsEngine.Rules
+  alias IslandsEngine.GameStateTable
 
 
   @players [:player1, :player2]
@@ -45,21 +46,8 @@ defmodule IslandsEngine.Game do
   ###
 
   def init(name) do
-    initial_state = %{
-      player1: %{
-        name: name,
-        board: Board.new(),
-        guesses: Guesses.new(),
-      },
-      player2: %{
-        name: nil,
-        board: Board.new(),
-        guesses: Guesses.new(),
-      },
-      rules: Rules.new(),
-    }
-
-    {:ok, initial_state, @timeout}
+    send(self(), {:set_state, name})
+    {:ok, fresh_state(name)}
   end
 
 
@@ -69,9 +57,9 @@ defmodule IslandsEngine.Game do
       state
       |> update_player2_name(name)
       |> update_rules(rules)
-      |> reply(:ok)
+      |> reply_ok(:ok)
     else
-      :error -> reply(state, :error)
+      :error -> reply_error(state, :error)
     end
   end
 
@@ -85,16 +73,16 @@ defmodule IslandsEngine.Game do
       state
       |> update_board(player, board)
       |> update_rules(rules)
-      |> reply(:ok)
+      |> reply_ok(:ok)
     else
       :error ->
-        reply(state, :error)
+        reply_error(state, :error)
 
       {:error, :invalid_coordinate} ->
-        reply(state, {:error, :invalid_coordinate})
+        reply_error(state, {:error, :invalid_coordinate})
 
       {:error, :invalid_island_type} ->
-        reply(state, {:error, :invalid_island_type})
+        reply_error(state, {:error, :invalid_island_type})
     end
   end
 
@@ -105,10 +93,10 @@ defmodule IslandsEngine.Game do
     do
       state
       |> update_rules(rules)
-      |> reply({:ok, board})
+      |> reply_ok({:ok, board})
     else
-      {:rules, :error} -> reply(state, :error)
-      {:board, false} -> reply(state, {:error, :not_all_islands_positioned})
+      {:rules, :error} -> reply_error(state, :error)
+      {:board, false} -> reply_error(state, {:error, :not_all_islands_positioned})
     end
   end
 
@@ -128,21 +116,54 @@ defmodule IslandsEngine.Game do
       |> update_board(opponent_key, opponent_board)
       |> update_guesses(player_key, hit_or_miss, coordinate)
       |> update_rules(rules)
-      |> reply({hit_or_miss, forested_island, win_status})
+      |> reply_ok({hit_or_miss, forested_island, win_status})
     else
-      :error -> reply(state, :error)
-      {:error, :invalid_coordinate} -> reply(state, {:error, :invalid_coordinate})
+      :error -> reply_error(state, :error)
+      {:error, :invalid_coordinate} -> reply_error(state, {:error, :invalid_coordinate})
     end
   end
 
-  def handle_info(:timeout, state), do:
+  def handle_info(:timeout, state) do
     {:stop, {:shutdown, :timeout}, state}
+  end
 
+  def handle_info({:set_state, name}, state) do
+    state =
+      case :ets.lookup(GameStateTable, name) do
+        [] -> state
+        [{_key, canned_state}] -> canned_state
+      end
+
+    :ets.insert(GameStateTable, {name, state})
+    {:noreply, state}
+  end
+
+  def terminate({:shutdown, :timeout}, state) do
+    :ets.delete(GameStateTable, state.player1.name)
+    :ok
+  end
+  def terminate(_reason, _state), do: :ok
 
 
   ###
   ### Further implementation
   ###
+
+  defp fresh_state(name) do
+    %{
+      player1: %{
+        name: name,
+        board: Board.new(),
+        guesses: Guesses.new(),
+      },
+      player2: %{
+        name: nil,
+        board: Board.new(),
+        guesses: Guesses.new(),
+      },
+      rules: Rules.new(),
+    }
+  end
 
   defp update_player2_name(state, name), do:
     put_in(state.player2.name, name)
@@ -151,6 +172,12 @@ defmodule IslandsEngine.Game do
   defp update_rules(state, rules), do:
     %{state | rules: rules}
 
+
+  defp reply_ok(state, reply) do
+    :ets.insert(GameStateTable, {state.player1.name, state})
+    reply(state, reply)
+  end
+  defp reply_error(state, reply), do: reply(state, reply)
 
   defp reply(state, reply), do:
     {:reply, reply, state, @timeout}
