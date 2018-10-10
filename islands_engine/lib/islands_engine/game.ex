@@ -83,6 +83,9 @@ defmodule IslandsEngine.Game do
 
       {:error, :invalid_island_type} ->
         reply_error(state, {:error, :invalid_island_type})
+
+      {:error, :overlapping_island} ->
+        reply_error(state, {:error, :overlapping_island})
     end
   end
 
